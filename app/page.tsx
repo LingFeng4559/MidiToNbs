@@ -2,7 +2,7 @@
 
 import { useMemo, useRef, useState, type InputHTMLAttributes } from "react";
 import { parseMidi } from "../lib/midi";
-import { convertMidiToNbs, type NbsStats } from "../lib/nbs";
+import { convertMidiToNbs, type NbsStats, type PitchMappingMode } from "../lib/nbs";
 import { makeZip } from "../lib/zip";
 
 type Status = "ready" | "processing" | "success" | "error";
@@ -18,6 +18,12 @@ type WorkItem = {
 };
 
 const directoryProps = { webkitdirectory: "", directory: "" } as InputHTMLAttributes<HTMLInputElement>;
+const pitchModes: Array<{ value: PitchMappingMode; title: string; description: string; recommended?: boolean }> = [
+  { value: "smart", title: "智慧樂器映射", description: "優先更換可覆蓋音高的原版樂器；只有極端音符才升降八度。", recommended: true },
+  { value: "track-octave", title: "整軌八度轉調", description: "同一軌道統一升八或降八，盡量維持旋律與和聲的相對關係。" },
+  { value: "note-octave", title: "逐音符八度折返", description: "超出原版區域的音符以 ±12 半音折返；保留音名，但可能產生八度跳動。" },
+  { value: "nbs-full", title: "保留完整 NBS 音域", description: "使用 NBS v5 的 0–87 key；最接近原始匯入，但不保證每個旋律 key 都是原版 33–57。" },
+];
 
 function outputName(name: string) { return name.replace(/\.(midi?|rmi)$/i, "") + ".nbs"; }
 function download(blob: Blob, name: string) {
@@ -35,7 +41,7 @@ export default function Home() {
   const [dropFeedback, setDropFeedback] = useState<DropFeedback | null>(null);
   const knownFileIds = useRef(new Set<string>());
   const [busy, setBusy] = useState(false);
-  const [minecraftMode, setMinecraftMode] = useState(true);
+  const [pitchMode, setPitchMode] = useState<PitchMappingMode>("smart");
 
   const counts = useMemo(() => ({
     success: items.filter((item) => item.status === "success").length,
@@ -72,14 +78,14 @@ export default function Home() {
   async function convertAll() {
     if (busy || !items.length) return;
     setBusy(true);
-    const working = items.map((item) => ({ ...item, status: "ready" as Status, bytes: undefined, stats: undefined, error: undefined }));
+    const working: WorkItem[] = items.map((item) => ({ ...item, status: "ready" as Status, bytes: undefined, stats: undefined, error: undefined }));
     setItems(working);
     for (let index = 0; index < working.length; index++) {
       working[index] = { ...working[index], status: "processing" };
       setItems([...working]);
       try {
         const midi = parseMidi(await working[index].file.arrayBuffer(), outputName(working[index].file.name).replace(/\.nbs$/i, ""));
-        const result = convertMidiToNbs(midi, working[index].file.name, { foldToVanillaRange: minecraftMode });
+        const result = convertMidiToNbs(midi, working[index].file.name, { pitchMode });
         working[index] = { ...working[index], status: "success", bytes: result.bytes, stats: result.stats };
       } catch (error) {
         working[index] = { ...working[index], status: "error", error: error instanceof Error ? error.message : String(error) };
@@ -99,7 +105,7 @@ export default function Home() {
     const successes = items.filter((item) => item.status === "success" && item.bytes);
     const summary = {
       generatedAt: new Date().toISOString(), format: "Open Note Block Studio v5", tempo: 10,
-      minecraftMelodyMode: minecraftMode, filesFound: items.length, succeeded: successes.length,
+      pitchMappingMode: pitchMode, filesFound: items.length, succeeded: successes.length,
       failed: items.length - successes.length,
       results: items.map((item) => ({ input: item.relativeName, output: outputName(item.relativeName), status: item.status, error: item.error, stats: item.stats })),
     };
@@ -154,10 +160,20 @@ export default function Home() {
           <div className="progressCopy"><b>{counts.done}/{items.length}</b><span>已處理</span></div>
         </header>
         <div className="progressTrack"><i style={{ width: `${items.length ? counts.done / items.length * 100 : 0}%` }} /></div>
-        <label className="modeToggle" htmlFor="minecraft-mode" aria-label="原版 Minecraft 旋律相容模式">
-          <input id="minecraft-mode" type="checkbox" checked={minecraftMode} disabled={busy} onChange={(event) => setMinecraftMode(event.target.checked)} />
-          <span><b>原版 Minecraft 旋律相容模式</b><small>旋律以樂器重映射／八度轉調維持 NBS key 33–57；打擊樂保留 NoteBlockStudio 官方 drum key。</small></span>
-        </label>
+        <fieldset className="mappingPanel" disabled={busy}>
+          <legend>選擇音高處理方式 <span>不使用直接裁切</span></legend>
+          <div className="mappingGrid">
+            {pitchModes.map((mode) => <label className={pitchMode === mode.value ? "selected" : ""} aria-label={mode.title} key={mode.value}>
+              <input type="radio" name="pitch-mode" value={mode.value} checked={pitchMode === mode.value}
+                onChange={() => {
+                  setPitchMode(mode.value);
+                  setItems((current) => current.map((item) => ({ ...item, status: "ready", bytes: undefined, stats: undefined, error: undefined })));
+                }} />
+              <span><b>{mode.title}{mode.recommended && <em>建議</em>}</b><small>{mode.description}</small></span>
+            </label>)}
+          </div>
+          <p>打擊樂在所有模式下皆保留 NoteBlockStudio drum key，不會套用旋律升降八度。</p>
+        </fieldset>
         <div className="fileList">
           {items.map((item) => <article className={`fileRow ${item.status}`} key={item.id}>
             <span className="statusDot" aria-label={item.status} />

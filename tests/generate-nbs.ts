@@ -8,7 +8,7 @@ if (!input || !output) throw new Error("Usage: generate-nbs.ts <input.mid> <outp
 const source = readFileSync(input);
 const arrayBuffer = source.buffer.slice(source.byteOffset, source.byteOffset + source.byteLength) as ArrayBuffer;
 const midi = parseMidi(arrayBuffer, "Roundtrip fixture");
-const result = convertMidiToNbs(midi, "fixture.mid", { foldToVanillaRange: true });
+const result = convertMidiToNbs(midi, "fixture.mid", { pitchMode: "smart" });
 writeFileSync(output, result.bytes);
 const summary = new TextEncoder().encode(JSON.stringify({ source: "fixture.mid", stats: result.stats }, null, 2));
 const zip = makeZip([{ name: "fixture.nbs", data: result.bytes }, { name: "conversion-summary.json", data: summary }]);

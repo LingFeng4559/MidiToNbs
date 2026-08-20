@@ -48,11 +48,18 @@ h1 em::after { content:""; position:absolute; left:2%; right:0; bottom:4px; heig
 .progressCopy span { color:var(--muted); font-size:12px; padding-bottom:5px; }
 .progressTrack { height:8px; margin:20px 0; background:#ded9cc; overflow:hidden; }
 .progressTrack i { display:block; height:100%; background:var(--violet); transition:width .2s; }
-.modeToggle { display:flex; align-items:start; gap:12px; padding:16px; border:1px solid #d7d1c4; background:#f5f1e8; cursor:pointer; }
-.modeToggle input { width:18px; height:18px; accent-color:var(--violet); }
-.modeToggle span { display:grid; gap:4px; }
-.modeToggle b { font-size:14px; }
-.modeToggle small { color:var(--muted); line-height:1.5; }
+.mappingPanel { margin:24px 0 0; padding:0; border:0; text-align:left; }
+.mappingPanel legend { width:100%; margin-bottom:12px; font-size:15px; font-weight:900; }
+.mappingPanel legend span { margin-left:8px; padding:4px 7px; color:#267d2c; background:#dcf3d7; font-size:10px; }
+.mappingGrid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px; }
+.mappingGrid label { display:flex; align-items:start; gap:11px; min-height:100px; padding:15px; border:1px solid #d7d1c4; background:#f5f1e8; cursor:pointer; transition:.15s ease; }
+.mappingGrid label:hover,.mappingGrid label.selected { border-color:var(--violet); background:#f0edff; box-shadow:3px 3px 0 var(--violet); }
+.mappingGrid input { flex:0 0 auto; width:18px; height:18px; margin-top:1px; accent-color:var(--violet); }
+.mappingGrid span { display:grid; gap:6px; }
+.mappingGrid b { font-size:14px; }
+.mappingGrid b em { margin-left:7px; padding:3px 6px; color:white; background:var(--violet); font-size:9px; font-style:normal; }
+.mappingGrid small { color:var(--muted); line-height:1.5; }
+.mappingPanel > p { margin:12px 0 0; color:var(--muted); font-size:11px; line-height:1.5; }
 .fileList { max-height:440px; margin:20px 0; overflow:auto; border-top:1px solid #d5d0c4; }
 .fileRow { min-height:64px; padding:12px 4px; display:grid; grid-template-columns:16px 1fr auto; gap:12px; align-items:center; border-bottom:1px solid #e0dbd0; }
 .statusDot { width:9px; height:9px; border-radius:50%; background:#a9a79f; }
@@ -94,6 +101,7 @@ h1 em::after { content:""; position:absolute; left:2%; right:0; bottom:4px; heig
   .steps h2 { margin-top:20px; }
   .workspace { width:calc(100% - 28px); padding:22px 16px; box-shadow:6px 6px 0 var(--violet); }
   .workspaceHead { align-items:start; }
+  .mappingGrid { grid-template-columns:1fr; }
   .actions { display:grid; grid-template-columns:1fr 1fr; }
   .ghostButton { grid-column:1/-1; margin:0; }
   .fileRow { grid-template-columns:14px 1fr; }

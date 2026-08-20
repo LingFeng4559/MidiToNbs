@@ -36,6 +36,11 @@ test("wires the real browser conversion pipeline and removes starter assets", as
   assert.match(page, /放開滑鼠，即可加入 MIDI/);
   assert.match(page, /個 MIDI 已加入清單/);
   assert.match(page, /aria-live="assertive"/);
+  assert.match(page, /智慧樂器映射/);
+  assert.match(page, /整軌八度轉調/);
+  assert.match(page, /逐音符八度折返/);
+  assert.match(page, /保留完整 NBS 音域/);
+  assert.doesNotMatch(page, /直接裁切[^<]*模式/);
   assert.match(layout, /Open Note Block Studio NBS/);
   assert.doesNotMatch(packageJson, /react-loading-skeleton/);
   await assert.rejects(access(new URL("../app/_sites-preview/SkeletonPreview.tsx", import.meta.url)));

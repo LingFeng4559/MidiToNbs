@@ -1,11 +1,15 @@
 import type { MidiNote, ParsedMidi } from "./midi";
 
+export type PitchMappingMode = "smart" | "track-octave" | "note-octave" | "nbs-full";
+
 export type NbsStats = {
+  mappingMode: PitchMappingMode;
   totalNotes: number;
   melodicNotes: number;
   percussionNotes: number;
-  pitchClamped: number;
+  nbsRangeFolded: number;
   octaveFolded: number;
+  trackShifted: number;
   instrumentRemapped: number;
   transposed: number;
   percussionOutsideVanilla: number;
@@ -18,7 +22,11 @@ export type NbsStats = {
 };
 
 export type NbsResult = { bytes: Uint8Array; stats: NbsStats };
-export type NbsOptions = { foldToVanillaRange?: boolean };
+export type NbsOptions = {
+  pitchMode?: PitchMappingMode;
+  /** @deprecated Use pitchMode. Kept for older callers. */
+  foldToVanillaRange?: boolean;
+};
 
 type NbsNote = { tick: number; layer: number; instrument: number; key: number; velocity: number };
 
@@ -94,16 +102,47 @@ class Writer {
 
 function clamp(value: number, min: number, max: number) { return Math.max(min, Math.min(max, value)); }
 
-function nearestVanillaPitch(note: number) {
-  if (note >= 30 && note <= 102) return note;
+function foldByOctave(value: number, min: number, max: number) {
+  if (value >= min && value <= max) return value;
   for (let octaves = 1; octaves <= 10; octaves++) {
-    if (note + 12 * octaves >= 30 && note + 12 * octaves <= 102) return note + 12 * octaves;
-    if (note - 12 * octaves >= 30 && note - 12 * octaves <= 102) return note - 12 * octaves;
+    if (value + 12 * octaves >= min && value + 12 * octaves <= max) return value + 12 * octaves;
+    if (value - 12 * octaves >= min && value - 12 * octaves <= max) return value - 12 * octaves;
   }
-  throw new Error(`MIDI note ${note} 無法映射到原版 Note Block 音域`);
+  throw new Error(`音高 ${value} 無法以八度折返到 ${min}–${max}`);
 }
 
-function mapNote(note: MidiNote, stats: NbsStats, foldToVanillaRange: boolean) {
+function trackGroup(note: MidiNote) { return `${note.track}\0${note.channel}`; }
+
+function chooseTrackOctaveOffsets(notes: MidiNote[]) {
+  const groups = new Map<string, MidiNote[]>();
+  for (const note of notes) {
+    if (note.channel === 9) continue;
+    const key = trackGroup(note);
+    groups.set(key, [...(groups.get(key) || []), note]);
+  }
+  const offsets = new Map<string, number>();
+  for (const [key, group] of groups) {
+    let best = { offset: 0, outside: Number.POSITIVE_INFINITY, distance: Number.POSITIVE_INFINITY };
+    for (let offset = -96; offset <= 96; offset += 12) {
+      let outside = 0;
+      let distance = 0;
+      for (const note of group) {
+        const shifted = note.note + offset;
+        if (shifted < 30) { outside++; distance += 30 - shifted; }
+        if (shifted > 102) { outside++; distance += shifted - 102; }
+      }
+      if (outside < best.outside ||
+          (outside === best.outside && distance < best.distance) ||
+          (outside === best.outside && distance === best.distance && Math.abs(offset) < Math.abs(best.offset))) {
+        best = { offset, outside, distance };
+      }
+    }
+    offsets.set(key, best.offset);
+  }
+  return offsets;
+}
+
+function mapNote(note: MidiNote, stats: NbsStats, mode: PitchMappingMode, trackOffsets: Map<string, number>) {
   if (note.channel === 9) {
     stats.percussionNotes++;
     const mapped = DRUMS[note.note];
@@ -119,13 +158,28 @@ function mapNote(note: MidiNote, stats: NbsStats, foldToVanillaRange: boolean) {
   stats.melodicNotes++;
   const program = clamp(note.program, 0, 127);
   const rawKey = note.note - 21 + 12 * PROGRAM_OCTAVE[program];
-  const key = clamp(rawKey, 0, 87);
-  if (key !== rawKey) stats.pitchClamped++;
   const preferred = PROGRAM_INSTRUMENT[program];
-  if (!foldToVanillaRange) return { instrument: preferred, key };
-  if (INSTRUMENT_BASE_MIDI[preferred] >= 0 && rawKey >= 33 && rawKey <= 57) return { instrument: preferred, key: rawKey };
+  if (mode === "nbs-full") {
+    const key = foldByOctave(rawKey, 0, 87);
+    if (key !== rawKey) { stats.nbsRangeFolded++; stats.transposed++; }
+    return { instrument: preferred, key };
+  }
+  if (mode === "note-octave") {
+    const key = foldByOctave(rawKey, 33, 57);
+    if (key !== rawKey) { stats.octaveFolded++; stats.transposed++; }
+    return { instrument: preferred, key };
+  }
 
-  const target = nearestVanillaPitch(note.note);
+  const trackOffset = mode === "track-octave" ? trackOffsets.get(trackGroup(note)) || 0 : 0;
+  const shiftedRawKey = rawKey + trackOffset;
+  const shiftedTarget = note.note + trackOffset;
+  const target = foldByOctave(shiftedTarget, 30, 102);
+  if (trackOffset) stats.trackShifted++;
+  if (target !== shiftedTarget) stats.octaveFolded++;
+  if (target !== note.note) stats.transposed++;
+  if (INSTRUMENT_BASE_MIDI[preferred] >= 0 && shiftedRawKey >= 33 && shiftedRawKey <= 57 && target === shiftedTarget) {
+    return { instrument: preferred, key: shiftedRawKey };
+  }
   const candidates = [preferred, ...PITCHED_INSTRUMENTS.filter((instrument) => instrument !== preferred)];
   const instrument = candidates.find((candidate) => {
     const base = INSTRUMENT_BASE_MIDI[candidate];
@@ -133,18 +187,17 @@ function mapNote(note: MidiNote, stats: NbsStats, foldToVanillaRange: boolean) {
   });
   if (instrument === undefined) throw new Error(`MIDI note ${note.note} 找不到可用樂器`);
   if (instrument !== preferred) stats.instrumentRemapped++;
-  if (target !== note.note) stats.transposed++;
   const vanillaKey = target - INSTRUMENT_BASE_MIDI[instrument] + 33;
-  if (vanillaKey !== rawKey) stats.octaveFolded++;
   return { instrument, key: vanillaKey };
 }
 
-function allocateNotes(midi: ParsedMidi, stats: NbsStats, foldToVanillaRange: boolean): NbsNote[] {
+function allocateNotes(midi: ParsedMidi, stats: NbsStats, mode: PitchMappingMode): NbsNote[] {
   const ordered = midi.notes.map((note, index) => ({ note, index })).sort((a, b) =>
     a.note.micros - b.note.micros || a.note.track - b.note.track || a.note.channel - b.note.channel ||
     a.note.note - b.note.note || a.index - b.index,
   );
   const result: NbsNote[] = [];
+  const trackOffsets = mode === "track-octave" ? chooseTrackOctaveOffsets(midi.notes) : new Map<string, number>();
   let currentTick = -1;
   let layer = 0;
   for (const { note } of ordered) {
@@ -155,7 +208,7 @@ function allocateNotes(midi: ParsedMidi, stats: NbsStats, foldToVanillaRange: bo
     stats.maxTimingErrorMs = Math.max(stats.maxTimingErrorMs, errorMs);
     if (tick !== currentTick) { currentTick = tick; layer = 0; } else layer++;
     if (layer > 0xffff) throw new Error("單一時間點超過 NBS v5 的 65,536 layer 限制");
-    const mapped = mapNote(note, stats, foldToVanillaRange);
+    const mapped = mapNote(note, stats, mode, trackOffsets);
     result.push({ tick, layer, instrument: mapped.instrument, key: mapped.key, velocity: clamp(note.velocity, 1, 100) });
     stats.layers = Math.max(stats.layers, layer + 1);
     stats.songLengthTicks = Math.max(stats.songLengthTicks, tick);
@@ -164,14 +217,15 @@ function allocateNotes(midi: ParsedMidi, stats: NbsStats, foldToVanillaRange: bo
 }
 
 export function convertMidiToNbs(midi: ParsedMidi, sourceFileName: string, options: NbsOptions = {}): NbsResult {
-  const foldToVanillaRange = options.foldToVanillaRange ?? true;
+  const mode = options.pitchMode ?? (options.foldToVanillaRange === false ? "nbs-full" : "smart");
   const stats: NbsStats = {
-    totalNotes: midi.notes.length, melodicNotes: 0, percussionNotes: 0, pitchClamped: 0, octaveFolded: 0,
-    instrumentRemapped: 0, transposed: 0, percussionOutsideVanilla: 0,
+    mappingMode: mode, totalNotes: midi.notes.length, melodicNotes: 0, percussionNotes: 0,
+    nbsRangeFolded: 0, octaveFolded: 0, trackShifted: 0, instrumentRemapped: 0,
+    transposed: 0, percussionOutsideVanilla: 0,
     percussionFallback: 0, timingQuantized: 0, maxTimingErrorMs: 0, layers: 0,
     songLengthTicks: 0, warnings: [],
   };
-  const notes = allocateNotes(midi, stats, foldToVanillaRange);
+  const notes = allocateNotes(midi, stats, mode);
   const writer = new Writer();
   writer.u16(0);                 // New-format marker.
   writer.u8(5);                  // Open Note Block Studio v5.
@@ -217,10 +271,10 @@ export function convertMidiToNbs(midi: ParsedMidi, sourceFileName: string, optio
   }
   writer.u8(0);                  // No custom instruments.
 
-  if (stats.pitchClamped) stats.warnings.push(`${stats.pitchClamped} 個旋律音高被限制到 NBS 0–87`);
-  if (stats.octaveFolded) stats.warnings.push(`${stats.octaveFolded} 個音符以八度折疊到原版 33–57 音域`);
+  if (stats.nbsRangeFolded) stats.warnings.push(`${stats.nbsRangeFolded} 個超出 NBS 0–87 的旋律音符以八度折返，沒有直接裁切`);
+  if (stats.trackShifted) stats.warnings.push(`${stats.trackShifted} 個旋律音符依所屬軌道統一升／降八度`);
+  if (stats.octaveFolded) stats.warnings.push(`${stats.octaveFolded} 個旋律音符個別以八度折返到可播放區域`);
   if (stats.instrumentRemapped) stats.warnings.push(`${stats.instrumentRemapped} 個旋律音符更換為可覆蓋音高的原版樂器`);
-  if (stats.transposed) stats.warnings.push(`${stats.transposed} 個極端旋律音符做最小八度轉調`);
   if (stats.percussionOutsideVanilla) stats.warnings.push(`${stats.percussionOutsideVanilla} 個打擊音保留 NoteBlockStudio 原始 key（可能位於 33–57 外）`);
   if (stats.percussionFallback) stats.warnings.push(`${stats.percussionFallback} 個未定義打擊音使用 hi-hat fallback`);
   if (stats.timingQuantized) stats.warnings.push(`${stats.timingQuantized} 個音符量化到 100 ms；最大誤差 ${stats.maxTimingErrorMs.toFixed(2)} ms`);
