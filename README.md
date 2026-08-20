@@ -1,100 +1,37 @@
-# vinext-starter
+# Note Block Forge
 
-A clean full-stack starter running on
-[vinext](https://github.com/cloudflare/vinext), with optional Cloudflare D1 and
-Drizzle support.
+Browser-local batch converter from Standard MIDI/RMID to true Open Note Block Studio `.nbs` files.
 
-## Prerequisites
+## Privacy
 
-- Node.js `>=22.13.0`
+MIDI files are parsed entirely inside the browser. They are not uploaded to a server. Generated NBS files can be downloaded individually or as a ZIP containing a JSON conversion summary.
 
-## Quick Start
+## Format and mapping
 
-```bash
-npm install
+- Writes uncompressed Open Note Block Studio NBS version 5 binary data, not renamed NBT.
+- Uses the 128-entry General MIDI instrument and percussion mappings from the local OpenNoteBlockStudio v3.11.0 reference project.
+- Applies the full MIDI tempo map before quantizing note starts to 100 ms; the NBS header therefore uses 10.00 ticks per second.
+- Preserves channel 9 percussion with the official NoteBlockStudio drum keys.
+- The default Minecraft-compatible melody mode remaps instruments or octave-transposes melodic notes into NBS keys 33–57. Disable it to preserve the broader legal NBS 0–87 melody range.
+- NBS v5 stores metadata as legacy single-byte strings, so unsupported Unicode characters inside the song metadata are replaced with `?`. Unicode filenames remain intact in browser downloads and the JSON summary.
+
+NBS v5 uses unsigned 16-bit song length, layer count, tick jumps, and layer jumps. Files exceeding those limits fail individually without stopping the batch.
+
+## Development
+
+Requires Node.js 22.13 or newer.
+
+```text
+npm ci
 npm run dev
 npm run build
+node --test tests/rendered-html.test.mjs
 ```
 
-This starter does not use `wrangler.jsonc`.
+The independent round-trip fixture generator can be run with:
 
-## Included Shape
-
-- edit site code under `app/`
-- `.openai/hosting.json` declares optional Sites D1 and R2 bindings
-- `vite.config.ts` simulates declared bindings for local development
-- `db/schema.ts` starts intentionally empty
-- `examples/d1/` contains an optional D1 example surface
-- `drizzle.config.ts` supports local migration generation when needed
-
-## Workspace Auth Headers
-
-Signed-in visitors receive both `oai-authenticated-user-id` and `oai-authenticated-user-email`. Private Sites require every visitor to sign in; public Sites may also have anonymous visitors, for whom neither header is present.
-
-The user ID is stable for the same user on the same Site and different across Sites. Email and name are intended for display or contact purposes.
-
-SIWC-authenticated workspace sites may also receive
-`oai-authenticated-user-full-name` when the user's SIWC profile has a non-empty
-`name` claim. The full-name value is percent-encoded UTF-8 and is accompanied by
-`oai-authenticated-user-full-name-encoding: percent-encoded-utf-8`.
-
-Treat the full name as optional and fall back to email when it is absent:
-
-```tsx
-import { headers } from "next/headers";
-
-export default async function Home() {
-  const requestHeaders = await headers();
-  const userId = requestHeaders.get("oai-authenticated-user-id");
-  const email = requestHeaders.get("oai-authenticated-user-email");
-  const encodedFullName = requestHeaders.get("oai-authenticated-user-full-name");
-  const fullName =
-    encodedFullName &&
-    requestHeaders.get("oai-authenticated-user-full-name-encoding") ===
-      "percent-encoded-utf-8"
-      ? decodeURIComponent(encodedFullName)
-      : null;
-
-  const displayName = fullName ?? email;
-  // ...
-}
+```text
+npx tsx tests/generate-nbs.ts input.mid output.nbs
 ```
 
-## Optional Dispatch-Owned ChatGPT Sign-In
-
-Import the ready-to-use helpers from `app/chatgpt-auth.ts` when the site needs
-optional or required ChatGPT sign-in:
-
-- Use `getChatGPTUser()` for optional signed-in UI.
-- Use `requireChatGPTUser(returnTo)` for server-rendered pages that should send
-  anonymous visitors through Sign in with ChatGPT.
-- Use `chatGPTSignInPath(returnTo)` and `chatGPTSignOutPath(returnTo)` for
-  browser links or actions.
-- Pass a same-origin relative `returnTo` path for the destination after sign-in
-  or sign-out. The helper validates and safely encodes it.
-- Mark protected pages with `export const dynamic = "force-dynamic"` because
-  they depend on per-request identity headers.
-
-Dispatch owns `/signin-with-chatgpt`, `/signout-with-chatgpt`, `/callback`, the
-OAuth cookies, and identity header injection. Do not implement app routes for
-those reserved paths. Routes that do not import and call the helper remain
-anonymous-compatible.
-
-SIWC establishes identity only; it does not prove workspace membership. Use the
-Sites hosting platform's access policy controls for workspace-wide restrictions,
-or enforce explicit server-side membership or allowlist checks.
-
-Use SIWC for account pages, user-specific dashboards, saved records, and write
-actions tied to the current ChatGPT user. Leave public content anonymous.
-
-## Useful Commands
-
-- `npm run dev`: start local development
-- `npm run build`: verify the vinext build output
-- `npm test`: build the starter and verify its rendered loading skeleton
-- `npm run db:generate`: generate Drizzle migrations after schema changes
-
-## Learn More
-
-- [vinext Documentation](https://github.com/cloudflare/vinext)
-- [Drizzle D1 Guide](https://orm.drizzle.team/docs/get-started/d1-new)
+The generated file can be validated using `pynbs.read()` or Open Note Block Studio itself.

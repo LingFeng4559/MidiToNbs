@@ -134,8 +134,8 @@ export default function Home() {
           <div className="progressCopy"><b>{counts.done}/{items.length}</b><span>已處理</span></div>
         </header>
         <div className="progressTrack"><i style={{ width: `${items.length ? counts.done / items.length * 100 : 0}%` }} /></div>
-        <label className="modeToggle">
-          <input type="checkbox" checked={minecraftMode} disabled={busy} onChange={(event) => setMinecraftMode(event.target.checked)} />
+        <label className="modeToggle" htmlFor="minecraft-mode" aria-label="原版 Minecraft 旋律相容模式">
+          <input id="minecraft-mode" type="checkbox" checked={minecraftMode} disabled={busy} onChange={(event) => setMinecraftMode(event.target.checked)} />
           <span><b>原版 Minecraft 旋律相容模式</b><small>旋律以樂器重映射／八度轉調維持 NBS key 33–57；打擊樂保留 NoteBlockStudio 官方 drum key。</small></span>
         </label>
         <div className="fileList">
