@@ -2,6 +2,10 @@
 
 Browser-local batch converter from Standard MIDI/RMID to true Open Note Block Studio `.nbs` files.
 
+## Live site
+
+<https://lingfeng4559.github.io/MidiToNbs/>
+
 ## Privacy
 
 MIDI files are parsed entirely inside the browser. They are not uploaded to a server. Generated NBS files can be downloaded individually or as a ZIP containing a JSON conversion summary.
@@ -25,8 +29,12 @@ Requires Node.js 22.13 or newer.
 npm ci
 npm run dev
 npm run build
+npm run build:pages
 node --test tests/rendered-html.test.mjs
 ```
+
+Pushes to `main` are published automatically to GitHub Pages by the
+`deploy-pages.yml` workflow.
 
 The independent round-trip fixture generator can be run with:
 
