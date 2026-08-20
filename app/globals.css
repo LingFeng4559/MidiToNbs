@@ -23,10 +23,15 @@ h1 em::after { content:""; position:absolute; left:2%; right:0; bottom:4px; heig
 .lead { color:var(--muted); font-size:clamp(16px,2vw,20px); line-height:1.65; }
 .dropzone { position:relative; max-width:860px; min-height:185px; margin:46px auto 22px; padding:30px 34px; display:grid; grid-template-columns:auto 1fr auto; align-items:center; gap:24px; text-align:left; background:#fffdf7; border:2px dashed #9e9a8f; box-shadow:8px 8px 0 var(--ink); cursor:pointer; transition:.18s ease; }
 .dropzone:hover,.dropzone.isDragging { transform:translate(-3px,-3px); box-shadow:12px 12px 0 var(--violet); border-color:var(--violet); }
+.dropzone.isDragging { background:#f0edff; border-style:solid; }
+.dropzone.hasFiles:not(.isDragging) { border-color:#45b34b; }
 .dropIcon { width:80px; height:80px; display:grid; place-items:center; background:var(--acid); border:2px solid var(--ink); transform:rotate(-3deg); }
 .dropIcon span { font-size:41px; transform:rotate(3deg); }
 .dropzone strong { display:block; font-size:clamp(20px,3vw,29px); margin-bottom:8px; }
 .dropzone small { color:var(--muted); font-size:13px; }
+.dropFeedback { min-height:24px; margin:-7px auto 12px; color:var(--muted); font-size:13px; font-weight:700; }
+.dropFeedback.success { color:#25852c; }
+.dropFeedback.warning { color:#b35a19; }
 .selectButton { padding:13px 18px; color:white; background:var(--ink); border:0; font-weight:800; cursor:pointer; }
 .selectButton span { color:var(--acid); margin-left:8px; }
 .folderButton { border:0; border-bottom:1px solid var(--ink); padding:4px 0; background:transparent; font-size:13px; font-weight:800; cursor:pointer; }

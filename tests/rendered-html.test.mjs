@@ -33,6 +33,9 @@ test("wires the real browser conversion pipeline and removes starter assets", as
   assert.match(page, /makeZip\(/);
   assert.match(page, /\.nbs/);
   assert.match(page, /onDrop=/);
+  assert.match(page, /放開滑鼠，即可加入 MIDI/);
+  assert.match(page, /個 MIDI 已加入清單/);
+  assert.match(page, /aria-live="assertive"/);
   assert.match(layout, /Open Note Block Studio NBS/);
   assert.doesNotMatch(packageJson, /react-loading-skeleton/);
   await assert.rejects(access(new URL("../app/_sites-preview/SkeletonPreview.tsx", import.meta.url)));

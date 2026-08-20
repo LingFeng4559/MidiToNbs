@@ -6,6 +6,7 @@ import { convertMidiToNbs, type NbsStats } from "../lib/nbs";
 import { makeZip } from "../lib/zip";
 
 type Status = "ready" | "processing" | "success" | "error";
+type DropFeedback = { tone: "success" | "warning"; message: string };
 type WorkItem = {
   id: string;
   file: File;
@@ -31,6 +32,8 @@ export default function Home() {
   const folderInput = useRef<HTMLInputElement>(null);
   const [items, setItems] = useState<WorkItem[]>([]);
   const [dragging, setDragging] = useState(false);
+  const [dropFeedback, setDropFeedback] = useState<DropFeedback | null>(null);
+  const knownFileIds = useRef(new Set<string>());
   const [busy, setBusy] = useState(false);
   const [minecraftMode, setMinecraftMode] = useState(true);
 
@@ -41,18 +44,29 @@ export default function Home() {
   }), [items]);
 
   function addFiles(files: Iterable<File>) {
-    const accepted = [...files].filter((file) => /\.(mid|midi|rmi)$/i.test(file.name));
-    setItems((current) => {
-      const seen = new Set(current.map((item) => item.id));
-      const additions = accepted.flatMap((file) => {
-        const relativeName = file.webkitRelativePath || file.name;
-        const id = `${relativeName}\0${file.size}\0${file.lastModified}`;
-        if (seen.has(id)) return [];
-        seen.add(id);
-        return [{ id, file, relativeName, status: "ready" as const }];
-      });
-      return [...current, ...additions];
+    const incoming = [...files];
+    const accepted = incoming.filter((file) => /\.(mid|midi|rmi)$/i.test(file.name));
+    const additions = accepted.flatMap((file) => {
+      const relativeName = file.webkitRelativePath || file.name;
+      const id = `${relativeName}\0${file.size}\0${file.lastModified}`;
+      if (knownFileIds.current.has(id)) return [];
+      knownFileIds.current.add(id);
+      return [{ id, file, relativeName, status: "ready" as const }];
     });
+
+    if (additions.length) setItems((current) => [...current, ...additions]);
+
+    const skipped = accepted.length - additions.length;
+    if (!accepted.length) {
+      setDropFeedback({ tone: "warning", message: "沒有找到可用的 MIDI 檔，請拖入 .mid、.midi 或 .rmi。" });
+    } else if (!additions.length) {
+      setDropFeedback({ tone: "warning", message: `${accepted.length} 個 MIDI 已經在清單中，沒有重複加入。` });
+    } else {
+      setDropFeedback({
+        tone: "success",
+        message: `${additions.length} 個 MIDI 已加入清單${skipped ? `，另有 ${skipped} 個重複檔案略過` : ""}。`,
+      });
+    }
   }
 
   async function convertAll() {
@@ -106,7 +120,7 @@ export default function Home() {
         <h1>整批 MIDI<br />直接轉成 <em>NBS</em></h1>
         <p className="lead">拖進來、在瀏覽器裡完成轉換，再一次下載。<br />檔案不會離開你的電腦。</p>
 
-        <div className={`dropzone ${dragging ? "isDragging" : ""}`}
+        <div className={`dropzone ${dragging ? "isDragging" : ""} ${items.length ? "hasFiles" : ""}`}
           onDragEnter={(event) => { event.preventDefault(); setDragging(true); }}
           onDragOver={(event) => event.preventDefault()}
           onDragLeave={(event) => { if (!event.currentTarget.contains(event.relatedTarget as Node)) setDragging(false); }}
@@ -117,10 +131,16 @@ export default function Home() {
             onChange={(event) => { if (event.target.files) addFiles(event.target.files); event.target.value = ""; }} />
           <input ref={folderInput} type="file" multiple hidden {...directoryProps}
             onChange={(event) => { if (event.target.files) addFiles(event.target.files); event.target.value = ""; }} />
-          <span className="dropIcon" aria-hidden="true"><span>♪</span></span>
-          <div><strong>把 MIDI 檔拖到這裡</strong><small>支援 .mid、.midi 與 RMID，可一次加入整批檔案</small></div>
+          <span className="dropIcon" aria-hidden="true"><span>{dragging ? "↓" : items.length ? "✓" : "♪"}</span></span>
+          <div>
+            <strong>{dragging ? "放開滑鼠，即可加入 MIDI" : items.length ? `已加入 ${items.length.toLocaleString()} 個 MIDI` : "把 MIDI 檔拖到這裡"}</strong>
+            <small>{dragging ? "放開後會立即顯示檔案清單" : dropFeedback?.message || "支援 .mid、.midi 與 RMID，可一次加入整批檔案"}</small>
+          </div>
           <button type="button" className="selectButton" onClick={(event) => { event.stopPropagation(); fileInput.current?.click(); }}>選擇檔案 <span>↗</span></button>
         </div>
+        <p className={`dropFeedback ${dropFeedback?.tone || "idle"}`} aria-live="assertive">
+          {dragging ? "已偵測到拖曳中的檔案，現在放開即可加入。" : dropFeedback?.message || "加入後會在下方顯示檔名與數量。"}
+        </p>
         <button className="folderButton" type="button" onClick={() => folderInput.current?.click()}>或選擇整個資料夾</button>
 
         <div className="trustRow" aria-label="轉換特色">
@@ -146,7 +166,7 @@ export default function Home() {
           </article>)}
         </div>
         <footer className="actions">
-          <button className="ghostButton" type="button" disabled={busy} onClick={() => setItems([])}>清空</button>
+          <button className="ghostButton" type="button" disabled={busy} onClick={() => { setItems([]); knownFileIds.current.clear(); setDropFeedback(null); }}>清空</button>
           <button className="convertButton" type="button" disabled={busy} onClick={convertAll}>{busy ? `轉換中 ${counts.done}/${items.length}` : "開始本機轉換"}</button>
           <button className="zipButton" type="button" disabled={busy || !counts.success} onClick={downloadAll}>下載全部 ZIP</button>
         </footer>
