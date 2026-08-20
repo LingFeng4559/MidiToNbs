@@ -103,7 +103,7 @@ export default function Home() {
 
       <section className="hero" id="top">
         <div className="eyebrow"><span>◆</span> MIDI → OPEN NOTE BLOCK STUDIO</div>
-        <h1>把整批 MIDI<br />鍛造成 <em>NBS</em></h1>
+        <h1>整批 MIDI<br />直接轉成 <em>NBS</em></h1>
         <p className="lead">拖進來、在瀏覽器裡完成轉換，再一次下載。<br />檔案不會離開你的電腦。</p>
 
         <div className={`dropzone ${dragging ? "isDragging" : ""}`}
