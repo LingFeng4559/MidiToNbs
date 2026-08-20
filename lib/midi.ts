@@ -6,6 +6,10 @@ export type MidiNote = {
   channel: number;
   program: number;
   track: number;
+  pan: number;
+  channelVolume: number;
+  expression: number;
+  pitchBendCents: number;
 };
 
 export type ParsedMidi = {
@@ -22,20 +26,25 @@ type RawEvent = {
   tick: number;
   track: number;
   order: number;
-  kind: "note" | "program" | "tempo" | "name";
+  kind: "note" | "program" | "control" | "pitch" | "tempo" | "name";
   channel?: number;
   note?: number;
   velocity?: number;
   program?: number;
+  controller?: number;
+  value?: number;
+  pitchBend?: number;
   tempo?: number;
   text?: string;
 };
 
 class Reader {
   private view: DataView;
+  private bytes: Uint8Array;
   pos = 0;
 
-  constructor(private bytes: Uint8Array) {
+  constructor(bytes: Uint8Array) {
+    this.bytes = bytes;
     this.view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
   }
 
@@ -137,6 +146,10 @@ function parseTrack(bytes: Uint8Array, track: number): RawEvent[] {
       events.push({ tick, track, order: order++, kind: "note", channel, note: data1, velocity: data2 });
     } else if (command === 0xc0) {
       events.push({ tick, track, order: order++, kind: "program", channel, program: data1 });
+    } else if (command === 0xb0) {
+      events.push({ tick, track, order: order++, kind: "control", channel, controller: data1, value: data2 });
+    } else if (command === 0xe0) {
+      events.push({ tick, track, order: order++, kind: "pitch", channel, pitchBend: data1 + data2 * 128 - 8192 });
     }
   }
   return events;
@@ -181,17 +194,46 @@ export function parseMidi(input: ArrayBuffer, fallbackName: string): ParsedMidi 
   };
 
   const programs = new Array(16).fill(0);
+  const volumes = new Array(16).fill(127);
+  const expressions = new Array(16).fill(127);
+  const pans = new Array(16).fill(64);
+  const pitchBends = new Array(16).fill(0);
+  const pitchBendRanges = new Array(16).fill(2);
+  const rpnMsb = new Array(16).fill(127);
+  const rpnLsb = new Array(16).fill(127);
   const notes: MidiNote[] = [];
   for (const event of events) {
-    if (event.kind === "program") programs[event.channel!] = event.program!;
+    const channel = event.channel!;
+    if (event.kind === "program") programs[channel] = event.program!;
+    if (event.kind === "pitch") pitchBends[channel] = event.pitchBend!;
+    if (event.kind === "control") {
+      const controller = event.controller!;
+      const value = event.value!;
+      if (controller === 7) volumes[channel] = value;
+      if (controller === 10) pans[channel] = value;
+      if (controller === 11) expressions[channel] = value;
+      if (controller === 101) rpnMsb[channel] = value;
+      if (controller === 100) rpnLsb[channel] = value;
+      if (controller === 6 && rpnMsb[channel] === 0 && rpnLsb[channel] === 0) pitchBendRanges[channel] = value;
+      if (controller === 121) {
+        // MIDI Reset All Controllers does not erase the channel's mix level or
+        // pan position. It does reset expression and pitch-related controllers.
+        expressions[channel] = 127;
+        pitchBends[channel] = 0; pitchBendRanges[channel] = 2; rpnMsb[channel] = 127; rpnLsb[channel] = 127;
+      }
+    }
     if (event.kind === "note") notes.push({
       tick: event.tick,
       micros: tickToMicros(event.tick),
       note: event.note!,
       velocity: event.velocity!,
-      channel: event.channel!,
-      program: programs[event.channel!],
+      channel,
+      program: programs[channel],
       track: event.track,
+      pan: pans[channel],
+      channelVolume: volumes[channel],
+      expression: expressions[channel],
+      pitchBendCents: Math.max(-1200, Math.min(1200, Math.round((pitchBends[channel] / 8192) * pitchBendRanges[channel] * 100))),
     });
   }
   const name = events.find((event) => event.kind === "name" && event.text?.trim())?.text?.trim() || fallbackName;

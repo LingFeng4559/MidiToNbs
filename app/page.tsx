@@ -19,10 +19,15 @@ type WorkItem = {
 
 const directoryProps = { webkitdirectory: "", directory: "" } as InputHTMLAttributes<HTMLInputElement>;
 const pitchModes: Array<{ value: PitchMappingMode; title: string; description: string; recommended?: boolean }> = [
-  { value: "smart", title: "智慧樂器映射", description: "優先更換可覆蓋音高的原版樂器；只有極端音符才升降八度。", recommended: true },
+  { value: "studio", title: "NoteBlockStudio 高還原", description: "依 16 種實際音源的起音、衰減、頻譜與基準音高重建映射，並使用完整 0–87 音域。", recommended: true },
+  { value: "smart", title: "智慧樂器映射", description: "優先更換可覆蓋音高的原版樂器；只有極端音符才升降八度。" },
   { value: "track-octave", title: "整軌八度轉調", description: "同一軌道統一升八或降八，盡量維持旋律與和聲的相對關係。" },
   { value: "note-octave", title: "逐音符八度折返", description: "超出原版區域的音符以 ±12 半音折返；保留音名，但可能產生八度跳動。" },
-  { value: "nbs-full", title: "保留完整 NBS 音域", description: "使用 NBS v5 的 0–87 key；最接近原始匯入，但不保證每個旋律 key 都是原版 33–57。" },
+];
+const timingModes = [
+  { value: "auto" as const, title: "自動高精度", description: "最高使用 40 TPS，長曲目會自動降低以符合 NBS v5 長度限制。" },
+  { value: 20 as const, title: "20 TPS", description: "每 tick 50 ms，適合遊戲 tick 對齊。" },
+  { value: 10 as const, title: "紅石 10 TPS", description: "每 tick 100 ms；只在需要紅石相容時使用。" },
 ];
 
 function outputName(name: string) { return name.replace(/\.(midi?|rmi)$/i, "") + ".nbs"; }
@@ -41,7 +46,8 @@ export default function Home() {
   const [dropFeedback, setDropFeedback] = useState<DropFeedback | null>(null);
   const knownFileIds = useRef(new Set<string>());
   const [busy, setBusy] = useState(false);
-  const [pitchMode, setPitchMode] = useState<PitchMappingMode>("smart");
+  const [pitchMode, setPitchMode] = useState<PitchMappingMode>("studio");
+  const [timingMode, setTimingMode] = useState<"auto" | 20 | 10>("auto");
 
   const counts = useMemo(() => ({
     success: items.filter((item) => item.status === "success").length,
@@ -75,6 +81,10 @@ export default function Home() {
     }
   }
 
+  function invalidateResults() {
+    setItems((current) => current.map((item) => ({ ...item, status: "ready", bytes: undefined, stats: undefined, error: undefined })));
+  }
+
   async function convertAll() {
     if (busy || !items.length) return;
     setBusy(true);
@@ -85,7 +95,7 @@ export default function Home() {
       setItems([...working]);
       try {
         const midi = parseMidi(await working[index].file.arrayBuffer(), outputName(working[index].file.name).replace(/\.nbs$/i, ""));
-        const result = convertMidiToNbs(midi, working[index].file.name, { pitchMode });
+        const result = convertMidiToNbs(midi, working[index].file.name, { pitchMode, ticksPerSecond: timingMode });
         working[index] = { ...working[index], status: "success", bytes: result.bytes, stats: result.stats };
       } catch (error) {
         working[index] = { ...working[index], status: "error", error: error instanceof Error ? error.message : String(error) };
@@ -104,8 +114,8 @@ export default function Home() {
   function downloadAll() {
     const successes = items.filter((item) => item.status === "success" && item.bytes);
     const summary = {
-      generatedAt: new Date().toISOString(), format: "Open Note Block Studio v5", tempo: 10,
-      pitchMappingMode: pitchMode, filesFound: items.length, succeeded: successes.length,
+      generatedAt: new Date().toISOString(), format: "Open Note Block Studio v5",
+      pitchMappingMode: pitchMode, timingMode, filesFound: items.length, succeeded: successes.length,
       failed: items.length - successes.length,
       results: items.map((item) => ({ input: item.relativeName, output: outputName(item.relativeName), status: item.status, error: item.error, stats: item.stats })),
     };
@@ -150,7 +160,7 @@ export default function Home() {
         <button className="folderButton" type="button" onClick={() => folderInput.current?.click()}>或選擇整個資料夾</button>
 
         <div className="trustRow" aria-label="轉換特色">
-          <span><b>V5</b> 真正 NBS 格式</span><span><b>16</b> 種原版樂器</span><span><b>10 TPS</b> 100 ms 時序</span><span><b>ZIP</b> 批次下載</span>
+          <span><b>V5</b> 真正 NBS 格式</span><span><b>0–87</b> 完整 NBS 音域</span><span><b>AUTO TPS</b> 精密時序</span><span><b>ZIP</b> 批次下載</span>
         </div>
       </section>
 
@@ -167,17 +177,27 @@ export default function Home() {
               <input type="radio" name="pitch-mode" value={mode.value} checked={pitchMode === mode.value}
                 onChange={() => {
                   setPitchMode(mode.value);
-                  setItems((current) => current.map((item) => ({ ...item, status: "ready", bytes: undefined, stats: undefined, error: undefined })));
+                  invalidateResults();
                 }} />
               <span><b>{mode.title}{mode.recommended && <em>建議</em>}</b><small>{mode.description}</small></span>
             </label>)}
           </div>
-          <p>打擊樂在所有模式下皆保留 NoteBlockStudio drum key，不會套用旋律升降八度。</p>
+          <p>高還原模式也會保留 MIDI 音量、expression、左右聲道與 note-on pitch bend。打擊樂維持 NoteBlockStudio drum key，不套用旋律升降八度。</p>
+        </fieldset>
+        <fieldset className="timingPanel" disabled={busy}>
+          <legend>時間精度</legend>
+          <div>
+            {timingModes.map((mode) => <label className={timingMode === mode.value ? "selected" : ""} aria-label={mode.title} key={mode.value}>
+              <input type="radio" name="timing-mode" value={mode.value} checked={timingMode === mode.value}
+                onChange={() => { setTimingMode(mode.value); invalidateResults(); }} />
+              <span><b>{mode.title}</b><small>{mode.description}</small></span>
+            </label>)}
+          </div>
         </fieldset>
         <div className="fileList">
           {items.map((item) => <article className={`fileRow ${item.status}`} key={item.id}>
             <span className="statusDot" aria-label={item.status} />
-            <div className="fileName"><b>{item.relativeName}</b><small>{item.error || (item.stats ? `${item.stats.totalNotes.toLocaleString()} notes · ${item.stats.layers} layers${item.stats.warnings.length ? ` · ${item.stats.warnings.length} warnings` : ""}` : `${(item.file.size / 1024).toFixed(1)} KB`)}</small></div>
+            <div className="fileName"><b>{item.relativeName}</b><small>{item.error || (item.stats ? `${item.stats.totalNotes.toLocaleString()} notes · ${item.stats.layers} layers · ${item.stats.ticksPerSecond.toFixed(2)} TPS${item.stats.warnings.length ? ` · ${item.stats.warnings.length} warnings` : ""}` : `${(item.file.size / 1024).toFixed(1)} KB`)}</small></div>
             {item.status === "success" && <button type="button" onClick={() => downloadOne(item)}>下載 .nbs</button>}
           </article>)}
         </div>

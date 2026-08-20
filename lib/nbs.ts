@@ -1,6 +1,6 @@
 import type { MidiNote, ParsedMidi } from "./midi";
 
-export type PitchMappingMode = "smart" | "track-octave" | "note-octave" | "nbs-full";
+export type PitchMappingMode = "studio" | "smart" | "track-octave" | "note-octave" | "nbs-full";
 
 export type NbsStats = {
   mappingMode: PitchMappingMode;
@@ -16,6 +16,10 @@ export type NbsStats = {
   percussionFallback: number;
   timingQuantized: number;
   maxTimingErrorMs: number;
+  ticksPerSecond: number;
+  velocityAdjusted: number;
+  panned: number;
+  pitchBent: number;
   layers: number;
   songLengthTicks: number;
   warnings: string[];
@@ -24,25 +28,38 @@ export type NbsStats = {
 export type NbsResult = { bytes: Uint8Array; stats: NbsStats };
 export type NbsOptions = {
   pitchMode?: PitchMappingMode;
+  ticksPerSecond?: number | "auto";
   /** @deprecated Use pitchMode. Kept for older callers. */
   foldToVanillaRange?: boolean;
 };
 
-type NbsNote = { tick: number; layer: number; instrument: number; key: number; velocity: number };
+type NbsNote = { tick: number; layer: number; instrument: number; key: number; velocity: number; pan: number; pitch: number };
 
+// GM program -> NBS vanilla instrument. This table is grouped by the 16 GM
+// families and was rebuilt from measurements of NoteBlockStudio's actual OGG
+// samples (attack, energy decay, spectral centroid/flatness and base pitch).
 const PROGRAM_INSTRUMENT = [
-  0,15,15,15,0,0,5,14,7,7,7,10,10,9,7,5,6,10,6,6,6,6,6,6,5,5,0,5,1,12,12,5,
-  1,1,1,1,5,5,1,15,6,6,6,6,6,1,0,3,6,6,6,6,6,6,6,3,6,6,6,12,6,12,12,6,
-  6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,13,6,6,6,5,6,6,1,7,6,6,6,6,6,6,8,
-  8,6,8,5,15,6,6,5,14,14,14,5,10,6,6,6,8,11,10,9,2,3,3,8,4,6,8,6,7,2,3,3,
+  // Piano, chromatic percussion
+  0,15,15,15,15,13,14,14, 7,7,7,10,9,9,8,14,
+  // Organ, guitar
+  6,15,13,6,6,6,6,6, 5,5,5,5,14,13,13,7,
+  // Bass, strings
+  1,1,1,12,1,1,12,12, 6,6,6,12,6,5,0,2,
+  // Ensemble, brass
+  6,6,15,15,6,6,15,15, 13,12,12,13,12,12,13,13,
+  // Reed, pipe
+  6,6,6,12,6,6,12,6, 6,6,6,6,6,6,6,6,
+  // Synth lead, synth pad
+  13,13,13,6,5,6,13,13, 8,15,13,6,6,8,8,8,
+  // Synth effects, ethnic
+  8,15,8,8,13,12,15,13, 14,14,14,14,10,6,6,6,
+  // Percussive, sound effects
+  7,11,10,4,2,2,3,8, 4,3,3,6,13,4,3,2,
 ];
 
-const PROGRAM_OCTAVE = [
-  0,0,0,0,0,0,1,0,-2,-2,-2,0,0,-2,-2,1,-1,0,-1,-1,-1,-1,-1,-1,1,1,0,1,2,2,2,3,
-  2,2,2,2,1,1,2,0,-1,-1,-1,-1,-1,2,0,0,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,2,-1,2,2,-1,
-  -1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,0,-1,-1,-1,1,-1,-1,2,-2,-1,-1,-1,-1,-1,-1,-2,
-  -2,-1,-2,1,0,-1,-1,1,0,0,0,1,0,-1,-1,-1,-2,-1,0,-2,0,0,0,-2,1,-1,-2,1,2,0,0,0,
-];
+// Key offset belongs to the selected sample, not to the GM program. It maps
+// the sample's natural Minecraft pitch span to NBS key 33–57.
+const INSTRUMENT_OCTAVE = [0,2,0,0,0,1,-1,-2,-2,-2,0,-1,2,0,0,0];
 
 // MIDI drum note -> [NBS vanilla instrument index, NoteBlockStudio source key].
 const DRUMS: Record<number, [number, number]> = {
@@ -157,9 +174,9 @@ function mapNote(note: MidiNote, stats: NbsStats, mode: PitchMappingMode, trackO
   }
   stats.melodicNotes++;
   const program = clamp(note.program, 0, 127);
-  const rawKey = note.note - 21 + 12 * PROGRAM_OCTAVE[program];
   const preferred = PROGRAM_INSTRUMENT[program];
-  if (mode === "nbs-full") {
+  const rawKey = note.note - 21 + 12 * INSTRUMENT_OCTAVE[preferred];
+  if (mode === "studio" || mode === "nbs-full") {
     const key = foldByOctave(rawKey, 0, 87);
     if (key !== rawKey) { stats.nbsRangeFolded++; stats.transposed++; }
     return { instrument: preferred, key };
@@ -191,6 +208,31 @@ function mapNote(note: MidiNote, stats: NbsStats, mode: PitchMappingMode, trackO
   return { instrument, key: vanillaKey };
 }
 
+function midiPanToNbs(pan: number) {
+  const value = clamp(Number.isFinite(pan) ? pan : 64, 0, 127);
+  return value <= 64 ? Math.round(value / 64 * 100) : 100 + Math.round((value - 64) / 63 * 100);
+}
+
+function midiVelocityToNbs(note: MidiNote) {
+  const velocity = clamp(note.velocity, 1, 127) / 127;
+  const volume = clamp(Number.isFinite(note.channelVolume) ? note.channelVolume : 127, 0, 127) / 127;
+  const expression = clamp(Number.isFinite(note.expression) ? note.expression : 127, 0, 127) / 127;
+  return clamp(Math.round(velocity * volume * expression * 100), 1, 100);
+}
+
+function chooseTicksPerSecond(midi: ParsedMidi, requested: number | "auto") {
+  if (requested !== "auto") {
+    if (!Number.isFinite(requested) || requested < 0.25 || requested > 655.35) throw new Error(`NBS TPS 必須介於 0.25–655.35：${requested}`);
+    // The v5 header stores tempo in hundredths of a tick per second. Use the
+    // exact serialized value for quantization as well, so timing cannot drift.
+    return Math.round(requested * 100) / 100;
+  }
+  if (midi.durationMicros <= 0) return 40;
+  const maximum = Math.floor((0xffff * 1_000_000) / midi.durationMicros * 100) / 100;
+  if (maximum < 0.25) throw new Error("歌曲太長，無法放入 NBS v5 的 65,535 ticks");
+  return Math.min(40, maximum);
+}
+
 function allocateNotes(midi: ParsedMidi, stats: NbsStats, mode: PitchMappingMode): NbsNote[] {
   const ordered = midi.notes.map((note, index) => ({ note, index })).sort((a, b) =>
     a.note.micros - b.note.micros || a.note.track - b.note.track || a.note.channel - b.note.channel ||
@@ -201,15 +243,21 @@ function allocateNotes(midi: ParsedMidi, stats: NbsStats, mode: PitchMappingMode
   let currentTick = -1;
   let layer = 0;
   for (const { note } of ordered) {
-    const tick = Math.max(0, Math.floor(note.micros / 100_000 + 0.5));
+    const tick = Math.max(0, Math.floor(note.micros * stats.ticksPerSecond / 1_000_000 + 0.5));
     if (tick > 0xffff) throw new Error("歌曲超過 NBS v5 的 65,535 ticks（約 109 分鐘）限制");
-    const errorMs = Math.abs(tick * 100 - note.micros / 1000);
+    const errorMs = Math.abs(tick * 1000 / stats.ticksPerSecond - note.micros / 1000);
     if (errorMs > 0.0001) stats.timingQuantized++;
     stats.maxTimingErrorMs = Math.max(stats.maxTimingErrorMs, errorMs);
     if (tick !== currentTick) { currentTick = tick; layer = 0; } else layer++;
     if (layer > 0xffff) throw new Error("單一時間點超過 NBS v5 的 65,536 layer 限制");
     const mapped = mapNote(note, stats, mode, trackOffsets);
-    result.push({ tick, layer, instrument: mapped.instrument, key: mapped.key, velocity: clamp(note.velocity, 1, 100) });
+    const velocity = midiVelocityToNbs(note);
+    const pan = midiPanToNbs(note.pan);
+    const pitch = note.channel === 9 ? 0 : clamp(Math.round(note.pitchBendCents || 0), -1200, 1200);
+    if (velocity !== clamp(note.velocity, 1, 100)) stats.velocityAdjusted++;
+    if (pan !== 100) stats.panned++;
+    if (pitch !== 0) stats.pitchBent++;
+    result.push({ tick, layer, instrument: mapped.instrument, key: mapped.key, velocity, pan, pitch });
     stats.layers = Math.max(stats.layers, layer + 1);
     stats.songLengthTicks = Math.max(stats.songLengthTicks, tick);
   }
@@ -217,12 +265,14 @@ function allocateNotes(midi: ParsedMidi, stats: NbsStats, mode: PitchMappingMode
 }
 
 export function convertMidiToNbs(midi: ParsedMidi, sourceFileName: string, options: NbsOptions = {}): NbsResult {
-  const mode = options.pitchMode ?? (options.foldToVanillaRange === false ? "nbs-full" : "smart");
+  const mode = options.pitchMode ?? (options.foldToVanillaRange === false ? "nbs-full" : "studio");
+  const ticksPerSecond = chooseTicksPerSecond(midi, options.ticksPerSecond ?? "auto");
   const stats: NbsStats = {
     mappingMode: mode, totalNotes: midi.notes.length, melodicNotes: 0, percussionNotes: 0,
     nbsRangeFolded: 0, octaveFolded: 0, trackShifted: 0, instrumentRemapped: 0,
     transposed: 0, percussionOutsideVanilla: 0,
-    percussionFallback: 0, timingQuantized: 0, maxTimingErrorMs: 0, layers: 0,
+    percussionFallback: 0, timingQuantized: 0, maxTimingErrorMs: 0, ticksPerSecond,
+    velocityAdjusted: 0, panned: 0, pitchBent: 0, layers: 0,
     songLengthTicks: 0, warnings: [],
   };
   const notes = allocateNotes(midi, stats, mode);
@@ -236,7 +286,7 @@ export function convertMidiToNbs(midi: ParsedMidi, sourceFileName: string, optio
   writer.string("");            // Author.
   writer.string("");            // Original author.
   writer.string("Converted locally with Note Block Forge");
-  writer.u16(1000);              // 10.00 ticks/s = 100 ms per tick.
+  writer.u16(Math.round(stats.ticksPerSecond * 100));
   writer.u8(0);                  // Legacy autosave disabled.
   writer.u8(10);
   writer.u8(4);
@@ -258,8 +308,8 @@ export function convertMidiToNbs(midi: ParsedMidi, sourceFileName: string, optio
       writer.u8(note.instrument);
       writer.u8(note.key);
       writer.u8(note.velocity);
-      writer.u8(100);            // Center panning in serialized 0..200 range.
-      writer.i16(0);             // Fine pitch in cents.
+      writer.u8(note.pan);
+      writer.i16(note.pitch);
     }
     writer.u16(0);
   }
@@ -277,6 +327,6 @@ export function convertMidiToNbs(midi: ParsedMidi, sourceFileName: string, optio
   if (stats.instrumentRemapped) stats.warnings.push(`${stats.instrumentRemapped} 個旋律音符更換為可覆蓋音高的原版樂器`);
   if (stats.percussionOutsideVanilla) stats.warnings.push(`${stats.percussionOutsideVanilla} 個打擊音保留 NoteBlockStudio 原始 key（可能位於 33–57 外）`);
   if (stats.percussionFallback) stats.warnings.push(`${stats.percussionFallback} 個未定義打擊音使用 hi-hat fallback`);
-  if (stats.timingQuantized) stats.warnings.push(`${stats.timingQuantized} 個音符量化到 100 ms；最大誤差 ${stats.maxTimingErrorMs.toFixed(2)} ms`);
+  if (stats.timingQuantized) stats.warnings.push(`${stats.timingQuantized} 個音符量化到 ${stats.ticksPerSecond.toFixed(2)} TPS；最大誤差 ${stats.maxTimingErrorMs.toFixed(2)} ms`);
   return { bytes: writer.finish(), stats };
 }

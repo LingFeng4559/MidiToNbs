@@ -60,6 +60,15 @@ h1 em::after { content:""; position:absolute; left:2%; right:0; bottom:4px; heig
 .mappingGrid b em { margin-left:7px; padding:3px 6px; color:white; background:var(--violet); font-size:9px; font-style:normal; }
 .mappingGrid small { color:var(--muted); line-height:1.5; }
 .mappingPanel > p { margin:12px 0 0; color:var(--muted); font-size:11px; line-height:1.5; }
+.timingPanel { margin:18px 0 0; padding:0; border:0; text-align:left; }
+.timingPanel legend { margin-bottom:10px; font-size:14px; font-weight:900; }
+.timingPanel > div { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:8px; }
+.timingPanel label { display:flex; align-items:start; gap:9px; padding:12px; border:1px solid #d7d1c4; background:#f5f1e8; cursor:pointer; }
+.timingPanel label.selected { border-color:var(--violet); background:#f0edff; }
+.timingPanel input { margin-top:2px; accent-color:var(--violet); }
+.timingPanel span { display:grid; gap:4px; }
+.timingPanel b { font-size:12px; }
+.timingPanel small { color:var(--muted); font-size:10px; line-height:1.4; }
 .fileList { max-height:440px; margin:20px 0; overflow:auto; border-top:1px solid #d5d0c4; }
 .fileRow { min-height:64px; padding:12px 4px; display:grid; grid-template-columns:16px 1fr auto; gap:12px; align-items:center; border-bottom:1px solid #e0dbd0; }
 .statusDot { width:9px; height:9px; border-radius:50%; background:#a9a79f; }
@@ -102,6 +111,7 @@ h1 em::after { content:""; position:absolute; left:2%; right:0; bottom:4px; heig
   .workspace { width:calc(100% - 28px); padding:22px 16px; box-shadow:6px 6px 0 var(--violet); }
   .workspaceHead { align-items:start; }
   .mappingGrid { grid-template-columns:1fr; }
+  .timingPanel > div { grid-template-columns:1fr; }
   .actions { display:grid; grid-template-columns:1fr 1fr; }
   .ghostButton { grid-column:1/-1; margin:0; }
   .fileRow { grid-template-columns:14px 1fr; }
