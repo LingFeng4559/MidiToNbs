@@ -11,13 +11,15 @@ async function render() {
   }, { waitUntil() {}, passThroughOnException() {} });
 }
 
-test("server-renders Note Block Forge", async () => {
+test("server-renders the concise MidiToNbs interface", async () => {
   const response = await render();
   assert.equal(response.status, 200);
   const html = await response.text();
-  assert.match(html, /Note Block Forge/);
-  assert.match(html, /OPEN NOTE BLOCK STUDIO/);
+  assert.match(html, /MidiToNbs/);
+  assert.match(html, /MIDI 轉 NBS/);
+  assert.match(html, /Open Note Block Studio/);
   assert.match(html, /100% 本機運算/);
+  assert.match(html, /選擇 MIDI 檔案/);
   assert.match(html, /下載 NBS/);
   assert.doesNotMatch(html, /codex-preview|Your site is taking shape/);
 });

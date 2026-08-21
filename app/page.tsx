@@ -54,6 +54,8 @@ export default function Home() {
     error: items.filter((item) => item.status === "error").length,
     done: items.filter((item) => item.status === "success" || item.status === "error").length,
   }), [items]);
+  const activePitchMode = pitchModes.find((mode) => mode.value === pitchMode)!;
+  const activeTimingMode = timingModes.find((mode) => mode.value === timingMode)!;
 
   function addFiles(files: Iterable<File>) {
     const incoming = [...files];
@@ -127,41 +129,34 @@ export default function Home() {
   return (
     <main className="shell">
       <nav className="topbar" aria-label="主要導覽">
-        <a className="brand" href="#top"><span className="brandMark" aria-hidden="true"><i /><i /><i /><i /></span><span>NOTE BLOCK <b>FORGE</b></span></a>
-        <span className="privacyPill"><i />100% 本機運算</span>
+        <a className="brand" href="#top"><span className="brandMark" aria-hidden="true">♪</span><span>MidiToNbs</span></a>
+        <span className="privacyPill"><i />檔案不會上傳</span>
       </nav>
 
       <section className="hero" id="top">
-        <div className="eyebrow"><span>◆</span> MIDI → OPEN NOTE BLOCK STUDIO</div>
-        <h1>整批 MIDI<br />直接轉成 <em>NBS</em></h1>
-        <p className="lead">拖進來、在瀏覽器裡完成轉換，再一次下載。<br />檔案不會離開你的電腦。</p>
+        <h1>MIDI 轉 NBS</h1>
+        <p className="lead">批次轉換成 Open Note Block Studio v5，簡單、快速，而且完全在你的瀏覽器中處理。</p>
 
         <div className={`dropzone ${dragging ? "isDragging" : ""} ${items.length ? "hasFiles" : ""}`}
           onDragEnter={(event) => { event.preventDefault(); setDragging(true); }}
           onDragOver={(event) => event.preventDefault()}
           onDragLeave={(event) => { if (!event.currentTarget.contains(event.relatedTarget as Node)) setDragging(false); }}
-          onDrop={(event) => { event.preventDefault(); setDragging(false); addFiles(event.dataTransfer.files); }}
-          onClick={() => fileInput.current?.click()} role="button" tabIndex={0}
-          onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") fileInput.current?.click(); }}>
+          onDrop={(event) => { event.preventDefault(); setDragging(false); addFiles(event.dataTransfer.files); }}>
           <input ref={fileInput} type="file" multiple accept=".mid,.midi,.rmi,audio/midi" hidden
             onChange={(event) => { if (event.target.files) addFiles(event.target.files); event.target.value = ""; }} />
           <input ref={folderInput} type="file" multiple hidden {...directoryProps}
             onChange={(event) => { if (event.target.files) addFiles(event.target.files); event.target.value = ""; }} />
-          <span className="dropIcon" aria-hidden="true"><span>{dragging ? "↓" : items.length ? "✓" : "♪"}</span></span>
-          <div>
-            <strong>{dragging ? "放開滑鼠，即可加入 MIDI" : items.length ? `已加入 ${items.length.toLocaleString()} 個 MIDI` : "把 MIDI 檔拖到這裡"}</strong>
-            <small>{dragging ? "放開後會立即顯示檔案清單" : dropFeedback?.message || "支援 .mid、.midi 與 RMID，可一次加入整批檔案"}</small>
-          </div>
-          <button type="button" className="selectButton" onClick={(event) => { event.stopPropagation(); fileInput.current?.click(); }}>選擇檔案 <span>↗</span></button>
+          <button type="button" className="selectButton" onClick={() => fileInput.current?.click()}>
+            {dragging ? "放開滑鼠，即可加入 MIDI" : items.length ? "繼續加入 MIDI" : "選擇 MIDI 檔案"}
+          </button>
+          <strong>{dragging ? "已偵測到檔案" : items.length ? `已加入 ${items.length.toLocaleString()} 個 MIDI` : "或將 MIDI 檔案拖放到這裡"}</strong>
+          <small>支援 .mid、.midi 與 .rmi，可一次選擇多個檔案</small>
         </div>
         <p className={`dropFeedback ${dropFeedback?.tone || "idle"}`} aria-live="assertive">
           {dragging ? "已偵測到拖曳中的檔案，現在放開即可加入。" : dropFeedback?.message || "加入後會在下方顯示檔名與數量。"}
         </p>
-        <button className="folderButton" type="button" onClick={() => folderInput.current?.click()}>或選擇整個資料夾</button>
-
-        <div className="trustRow" aria-label="轉換特色">
-          <span><b>V5</b> 真正 NBS 格式</span><span><b>0–87</b> 完整 NBS 音域</span><span><b>AUTO TPS</b> 精密時序</span><span><b>ZIP</b> 批次下載</span>
-        </div>
+        <button className="folderButton" type="button" onClick={() => folderInput.current?.click()}>選擇整個資料夾</button>
+        <p className="localNote"><span>●</span> 100% 本機運算 · 支援完整 NBS 0–87 音域 · 可批次下載 ZIP</p>
       </section>
 
       {items.length > 0 && <section className="workspace" aria-live="polite">
@@ -170,30 +165,28 @@ export default function Home() {
           <div className="progressCopy"><b>{counts.done}/{items.length}</b><span>已處理</span></div>
         </header>
         <div className="progressTrack"><i style={{ width: `${items.length ? counts.done / items.length * 100 : 0}%` }} /></div>
-        <fieldset className="mappingPanel" disabled={busy}>
-          <legend>選擇音高處理方式 <span>不使用直接裁切</span></legend>
-          <div className="mappingGrid">
-            {pitchModes.map((mode) => <label className={pitchMode === mode.value ? "selected" : ""} aria-label={mode.title} key={mode.value}>
-              <input type="radio" name="pitch-mode" value={mode.value} checked={pitchMode === mode.value}
-                onChange={() => {
-                  setPitchMode(mode.value);
-                  invalidateResults();
-                }} />
-              <span><b>{mode.title}{mode.recommended && <em>建議</em>}</b><small>{mode.description}</small></span>
-            </label>)}
+        <section className="settingsPanel" aria-label="轉換設定">
+          <div className="settingField">
+            <label htmlFor="pitch-mode">音高處理</label>
+            <select id="pitch-mode" disabled={busy} value={pitchMode} onChange={(event) => {
+              setPitchMode(event.target.value as PitchMappingMode); invalidateResults();
+            }}>
+              {pitchModes.map((mode) => <option value={mode.value} key={mode.value}>{mode.title}{mode.recommended ? "（建議）" : ""}</option>)}
+            </select>
+            <small>{activePitchMode.description}</small>
           </div>
-          <p>高還原模式也會保留 MIDI 音量、expression、左右聲道與 note-on pitch bend。打擊樂維持 NoteBlockStudio drum key，不套用旋律升降八度。</p>
-        </fieldset>
-        <fieldset className="timingPanel" disabled={busy}>
-          <legend>時間精度</legend>
-          <div>
-            {timingModes.map((mode) => <label className={timingMode === mode.value ? "selected" : ""} aria-label={mode.title} key={mode.value}>
-              <input type="radio" name="timing-mode" value={mode.value} checked={timingMode === mode.value}
-                onChange={() => { setTimingMode(mode.value); invalidateResults(); }} />
-              <span><b>{mode.title}</b><small>{mode.description}</small></span>
-            </label>)}
+          <div className="settingField">
+            <label htmlFor="timing-mode">時間精度</label>
+            <select id="timing-mode" disabled={busy} value={String(timingMode)} onChange={(event) => {
+              const value = event.target.value === "auto" ? "auto" : Number(event.target.value) as 20 | 10;
+              setTimingMode(value); invalidateResults();
+            }}>
+              {timingModes.map((mode) => <option value={String(mode.value)} key={mode.value}>{mode.title}</option>)}
+            </select>
+            <small>{activeTimingMode.description}</small>
           </div>
-        </fieldset>
+          <p><b>不直接裁切音符。</b> 高還原模式保留音量、expression、pan、note-on pitch bend 與 NoteBlockStudio drum key。</p>
+        </section>
         <div className="fileList">
           {items.map((item) => <article className={`fileRow ${item.status}`} key={item.id}>
             <span className="statusDot" aria-label={item.status} />
@@ -209,7 +202,7 @@ export default function Home() {
       </section>}
 
       <section className="how">
-        <p className="sectionLabel">HOW IT WORKS</p>
+        <p className="sectionLabel">三個步驟完成</p>
         <div className="steps">
           <article><span>01</span><h2>加入 MIDI</h2><p>多選、拖放或選擇整個資料夾。</p></article>
           <article><span>02</span><h2>本機轉換</h2><p>解析 tempo、GM 樂器、打擊與音高。</p></article>
