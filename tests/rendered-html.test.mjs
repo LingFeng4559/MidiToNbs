@@ -21,6 +21,7 @@ test("server-renders the concise MidiToNbs interface", async () => {
   assert.match(html, /100% 本機運算/);
   assert.match(html, /選擇 MIDI 檔案/);
   assert.match(html, /下載 NBS/);
+  assert.doesNotMatch(html, /三個步驟完成/);
   assert.doesNotMatch(html, /codex-preview|Your site is taking shape/);
 });
 

@@ -133,7 +133,7 @@ export default function Home() {
         <span className="privacyPill"><i />檔案不會上傳</span>
       </nav>
 
-      <section className="hero" id="top">
+      <section className={`hero ${items.length ? "withQueue" : ""}`} id="top">
         <h1>MIDI 轉 NBS</h1>
         <p className="lead">批次轉換成 Open Note Block Studio v5，簡單、快速，而且完全在你的瀏覽器中處理。</p>
 
@@ -201,15 +201,7 @@ export default function Home() {
         </footer>
       </section>}
 
-      <section className="how">
-        <p className="sectionLabel">三個步驟完成</p>
-        <div className="steps">
-          <article><span>01</span><h2>加入 MIDI</h2><p>多選、拖放或選擇整個資料夾。</p></article>
-          <article><span>02</span><h2>本機轉換</h2><p>解析 tempo、GM 樂器、打擊與音高。</p></article>
-          <article><span>03</span><h2>下載 NBS</h2><p>單檔下載，或連同 JSON 摘要打包 ZIP。</p></article>
-        </div>
-        <p className="formatNote">輸出為未壓縮 Open Note Block Studio v5 binary，不是重新命名的 NBT。NBS v6 尚未納入本地參考版本。</p>
-      </section>
+      <footer className="siteFooter"><span className="footerFull">Open Note Block Studio v5 · 轉換後可下載 NBS 或 ZIP · NBS v6 尚未支援</span><span className="footerCompact">Open Note Block Studio v5 · 100% 本機處理</span></footer>
     </main>
   );
 }
